@@ -22,6 +22,96 @@ combines a local math server, a weather server, and an OpenAI chat model.
 - **Python package entry point** (`src/agentic_langgraph/__init__.py`):
   currently prints a greeting; it does not start the MCP agent.
 
+## Multi-agent patterns: simple and supervisor
+
+A multi-agent system divides work among multiple agents, each of which can
+have its own instructions, model configuration, tools, or area of expertise.
+In LangGraph, agents can be represented as nodes in a graph, with graph edges
+defining how work and state move between them. The two patterns below differ
+mainly in who decides which agent runs next.
+
+### Simple multi-agent workflow
+
+A simple multi-agent workflow connects agents using a predefined path. The
+application, rather than an agent, decides the order of work. For example, a
+research agent could gather information, a writing agent could turn it into a
+draft, and a review agent could check the result:
+
+```text
+Input -> Research agent -> Writing agent -> Review agent -> Output
+```
+
+Each agent receives the relevant input and shared results from earlier steps,
+performs its specialized task, and returns an output for the next step. The
+graph may also include conditional edges for known decisions, such as sending
+a failed review back to the writing agent. Those branches are still defined
+by the application; there is no general-purpose agent choosing among workers.
+
+This pattern is a good fit when:
+
+- The steps are known in advance and usually run in the same order.
+- Work can be divided into clear, specialized stages.
+- You want predictable execution, simpler debugging, and explicit control over
+  the workflow.
+
+Its main limitation is reduced flexibility: a fixed workflow may run
+unnecessary steps or fail to adapt when a task needs a different specialist.
+Conditional branches can handle anticipated cases, but each branch must be
+designed and maintained in the graph.
+
+### Supervisor multi-agent workflow
+
+A supervisor workflow adds a central agent that coordinates specialized
+worker agents. The supervisor receives the task, chooses a worker, gives it
+the relevant context, and uses the worker's result to decide what to do next.
+It can call more workers, ask a worker to revise its result, or finish and
+return an answer:
+
+```text
+                   +-> Research agent --+
+Input -> Supervisor +-> Writing agent ---+-> Supervisor -> Output
+                   +-> Review agent -----+
+```
+
+The supervisor is commonly implemented as an agent with tools that invoke
+the workers. A worker does its assigned job and returns a result; the
+supervisor retains control and decides the next step. The graph therefore
+typically routes from the supervisor to a selected worker and back to the
+supervisor, with an exit route when the work is complete. Shared graph state
+can carry the original request, intermediate results, and any relevant
+conversation history between these steps.
+
+This pattern is useful when:
+
+- The right sequence of work depends on the request or on results received
+  along the way.
+- Different specialists may be needed for different tasks.
+- A coordinator needs to combine, check, or refine workers' contributions
+  before responding.
+
+The added flexibility comes with trade-offs. The supervisor adds model calls
+and coordination overhead, and poor routing instructions can lead to
+unnecessary or repeated worker calls. Define each worker's responsibilities
+and output clearly, limit which workers the supervisor can call, and provide
+an explicit completion condition to keep the workflow understandable and
+bounded.
+
+### Choosing between the patterns
+
+| Consideration | Simple workflow | Supervisor workflow |
+|---|---|---|
+| Who chooses the next step? | The predefined graph | The supervisor agent |
+| Execution order | Known ahead of time | Chosen as the task progresses |
+| Strength | Predictable and easy to inspect | Adaptive and suited to varied tasks |
+| Trade-off | Less adaptable to unanticipated work | More orchestration, cost, and routing complexity |
+| Best starting point | A stable sequence of stages | Tasks that need dynamic specialist selection |
+
+These are architectural options, not two modes currently exposed by this
+repository. The current MCP example runs one chat agent that can use tools
+from the math and weather MCP servers; those tools are not separate
+collaborating agents. A multi-agent implementation would require adding
+agent nodes, graph routing, and the relevant shared state.
+
 ## Requirements
 
 - Python 3.11 or newer.
